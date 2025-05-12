@@ -16,14 +16,13 @@ namespace FileExplorer.Application.Services
         }
         public async Task<FileDto> CreateFile(CreateFileDto fileDto)
         {
-            if ((fileDto.FolderId.HasValue))
+
+            var parent = await _dbContext.Folders.FindAsync(fileDto.FolderId);
+            if (parent == null)
             {
-                var parent = await _dbContext.Folders.FindAsync(fileDto.FolderId);
-                if (parent == null)
-                {
-                    throw new ArgumentException($"Folder with ID {fileDto.FolderId} does not exist.");
-                }
+                throw new ArgumentException($"Folder with ID {fileDto.FolderId} does not exist.");
             }
+            
 
             var duplicate = await _dbContext.Files
                 .Where(f => f.Name == fileDto.Name && f.FolderId == fileDto.FolderId)
@@ -66,7 +65,55 @@ namespace FileExplorer.Application.Services
                 .Where(f => f.FolderId == folderId)
                 .ToListAsync();
 
-            return files.Select(f => new FileDto() { FolderId = f.FolderId, Id = f.Id, Name = f.Name});
+            return files.Select(async f => new FileDto()
+            {
+                FolderId = f.FolderId,
+                Id = f.Id,
+                Name = f.Name,
+                Path = await GetFullPath(f.FolderId, f.Name)
+            }).Select(t => t.Result); // Fix: Await the Task<string> and return the result
+        }
+
+        private async Task<string> GetFullPath(int folderId, string fileName)
+        {
+            if (folderId == null)
+            {
+                return fileName;
+            }
+
+            var folder = await _dbContext.Folders.FindAsync(folderId);
+            if (folder == null)
+            {
+                throw new ArgumentException($"Folder with ID {folderId} does not exist.");
+            }
+
+            var pathSegments = new List<string> { fileName };
+            var currentFolder = folder;
+
+            while (currentFolder != null)
+            {
+                pathSegments.Insert(0, currentFolder.Name);
+                if (currentFolder.ParentId == null)
+                {
+                    break;
+                }
+                else
+                {
+                    currentFolder = await GetParentFolder(currentFolder.ParentId.Value);
+                }
+            }
+
+            return string.Join("/", pathSegments);
+        }
+
+        private async Task<FolderItem?> GetParentFolder(int folderId)
+        {
+            var folder = await _dbContext.Folders.FindAsync(folderId);
+            if (folder == null)
+            {
+                throw new ArgumentException($"Folder with ID {folderId} does not exist.");
+            }
+            return folder;
         }
 
         public async Task<IEnumerable<FileDto>> SearchFiles(string query, int? folderId)
@@ -84,7 +131,19 @@ namespace FileExplorer.Application.Services
                 .Take(10)
                 .ToListAsync();
 
-            return files.Select(f => new FileDto() { FolderId = f.FolderId, Id = f.Id, Name = f.Name });
+            var fileDtos = new List<FileDto>();
+            foreach (var f in files)
+            {
+                fileDtos.Add(new FileDto()
+                {
+                    FolderId = f.FolderId,
+                    Id = f.Id,
+                    Name = f.Name,
+                    Path = await GetFullPath(f.FolderId, f.Name) // Fix: Await the Task<string> here
+                });
+            }
+
+            return fileDtos;
         }
     }
 }

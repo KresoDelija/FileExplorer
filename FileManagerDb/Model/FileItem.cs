@@ -10,8 +10,8 @@ namespace FileManager.Infrastructure.Model
     {
         public int Id { get; set; }
         public string Name { get; set; }
-        public int? FolderId { get; set; }
-        public FolderItem? Folder { get; set; }
+        public int FolderId { get; set; }
+        public FolderItem Folder { get; set; }
 
     }
 }
